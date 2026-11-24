@@ -15,7 +15,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 仓库首次使用前需要先在 Settings → Pages 把 Source 设为 GitHub Actions。
+  # 启用前 push 只会跳过这个 job，不会产生失败记录；启用后可以手动运行本工作流，
+  # 或添加仓库变量 PAGES_ENABLED=true 让后续 push 自动部署。
   deploy:
+    if: github.event_name == 'workflow_dispatch' || vars.PAGES_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

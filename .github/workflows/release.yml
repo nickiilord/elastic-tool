@@ -11,6 +11,9 @@ permissions:
 jobs:
   package:
     runs-on: windows-latest
+    env:
+      # 没有配置代码签名证书，显式跳过签名
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v4
 
@@ -26,11 +29,21 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build and package
-        run: pnpm dist
-        env:
-          # 没有配置代码签名证书，显式跳过签名
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Build
+        run: pnpm build
+
+      - name: Package
+        run: pnpm exec electron-builder --win nsis --publish never
+
+      - name: Upload builder debug info
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: builder-debug
+          path: |
+            dist/builder-debug.yml
+            dist/*.log
+          if-no-files-found: ignore
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
