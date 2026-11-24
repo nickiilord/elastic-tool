@@ -22,6 +22,8 @@ export const IPC = {
   connectionSave: 'connection:save',
   connectionRemove: 'connection:remove',
   connectionTest: 'connection:test',
+  connectionDetail: 'connection:detail',
+  connectionTestDraft: 'connection:test-draft',
   indexList: 'index:list',
   indexSchema: 'index:schema',
   indexRefreshSchema: 'index:refresh-schema',
@@ -60,6 +62,24 @@ export interface CurlInput {
   docId?: string
 }
 
+/** 编辑连接时回填用的详情，不返回密码类字段，只说明是否已经保存过凭证。 */
+export interface ConnectionDetail {
+  id: string
+  name: string
+  url: string
+  environment: ConnectionInput['environment']
+  readOnly: boolean
+  auth: {
+    type: ConnectionInput['auth']['type']
+    username?: string
+    apiKeyId?: string
+    hasSecret: boolean
+  }
+  tls: { rejectUnauthorized: boolean; caCertPath?: string }
+  proxy?: string
+  timeoutMs: number
+}
+
 export interface RendererApi {
   app: {
     info(): Promise<AppInfo>
@@ -70,6 +90,8 @@ export interface RendererApi {
     save(input: ConnectionInput): Promise<ConnectionSummary>
     remove(id: string): Promise<void>
     test(id: string): Promise<TestResult>
+    detail(id: string): Promise<ConnectionDetail>
+    testDraft(input: ConnectionInput): Promise<TestResult>
   }
   indices: {
     list(connectionId: string): Promise<IndexSummary[]>
@@ -100,5 +122,8 @@ export interface RendererApi {
     close(): Promise<void>
     isMaximized(): Promise<boolean>
     setTheme(preference: ThemePreference): Promise<void>
+  }
+  clipboard: {
+    writeText(text: string): Promise<void>
   }
 }

@@ -20,21 +20,25 @@
 
 - 选中索引后，字段来自 mapping，条件行由字段类型决定操作符和值控件，实时编译成 DSL 并校验，运行结果直接在表格里翻页查看。
 - 诊断页把分片、线程池、磁盘水位、节点状态集中展示，排查集群问题不用再手写一串 `_cat` 请求。
-- 所有请求都在本机主进程发出，凭证用系统钥匙串加密保存。
+- 所有请求都在本机主进程发出，凭证用系统钥匙串加密后写入本地 SQLite 凭证库，不散落在配置文件里。
 
 ## 功能
 
+- **连接管理**：新建、编辑（密码类字段留空表示不修改）、删除，标题栏与状态栏实时显示连接状态、版本与握手延迟；保存前可以先「测试连接」。
 - **查询构建器**：字段选择（可搜索）、类型驱动的操作符矩阵、单值 / 多值 / 区间 / 日期快捷 / 布尔控件、嵌套分组、排除条件、排序、每页条数、聚合开关。
 - **编译与校验**：条件树实时编译成 DSL；阻断项禁用运行并给自动修复（如改用 `.keyword`、交换区间端点）；预警项估算扫描耗时；只读连接拦截写操作。
 - **DSL 编辑器**：CodeMirror 6、行号、随主题切换的语法高亮，构建器与 DSL 双向切换。
-- **结果区**：表格、JSON、聚合、Profile 占位，状态码 / 分片 / 往返耗时 / 命中数，状态字段着色，导出 CSV / JSON / 复制 JSON。
+- **写操作**：按 ID 取文档、索引 / 更新 / 删除文档时出现 `_id` 输入框，路径预览同步更新。
+- **结果区**：表格支持三种响应：搜索命中、`_cat` 数组、任意 JSON 对象（按字段 / 值两列展示）；JSON、聚合、Profile 占位，状态码 / 分片 / 往返耗时 / 命中数，状态字段着色，导出 CSV / JSON / 复制 JSON。
 - **结果分页**：默认每页 20 条，可切 20 / 50 / 100，上一页 / 下一页；翻页自动重跑查询，改条件或改每页条数回到第一页。
 - **复制成 curl**：运行按钮旁一键复制当前请求的 curl 命令，method、路径、认证方式与自签证书 `-k` 都和实际请求一致。
 - **集群诊断**：五张指标卡、未分配分片原因、线程池、节点 CPU / 堆 / 磁盘水位、段与缓存指标、10 秒自动刷新、hot threads。
 - **主题**：浅色 / 深色 / 跟随系统，首帧无闪烁，切换带扩散过渡，偏好本地持久化。
 - **单工作区**：不做多标签页；切换索引时按「连接 + 索引」保留各自的查询草稿。
 - **命令面板（Ctrl K）**：索引、连接、字段加条件、历史跳转。
-- **收藏与历史**：保存条件树与选项，按连接隔离，点击恢复。
+- **收藏与历史**：保存条件树与选项，按连接隔离；收藏可删除，历史可一键清空。
+- **多节点**：连接地址支持逗号分隔的多个节点，网络失败或超时时自动尝试下一个节点。
+- **桌面能力**：窗口位置 / 大小 / 最大化状态记忆、应用菜单与「关于」、Windows 与 macOS 的自动更新（基于 GitHub Releases）。
 
 ## 截图
 
@@ -99,11 +103,14 @@ pnpm dist        # 类型检查 + 构建 + 打包，产物在 dist/
 ```
 src/
 ├─ main/                主进程
-│  ├─ index.ts          app 生命周期、单实例、窗口创建
+│  ├─ index.ts          app 生命周期、单实例、窗口创建、菜单与更新器初始化
 │  ├─ window.ts         BrowserWindow、平台标题栏、导航拦截、窗口底色跟随主题
-│  ├─ ipc/index.ts      IPC handler、zod 入参校验、只读拦截、主题同步
-│  ├─ es/               HTTP 客户端（TLS/认证/超时/取消）、操作执行与计时、curl 命令生成
-│  └─ services/         连接与凭证、历史、收藏、schema 缓存、诊断聚合、内存采样、演示数据
+│  ├─ window-state.ts   窗口位置 / 大小 / 最大化状态记忆
+│  ├─ menu.ts           应用菜单与「关于」对话框
+│  ├─ updater.ts        自动更新（electron-updater，基于 GitHub Releases）
+│  ├─ ipc/index.ts      IPC handler、zod 入参校验、只读拦截、主题同步、连接探测
+│  ├─ es/               HTTP 客户端（多节点 / TLS / 认证 / 超时 / 取消）、操作执行、curl 与连接探测
+│  └─ services/         连接与凭证（SQLite）、历史、收藏、schema 缓存、诊断聚合、内存采样、演示数据
 ├─ preload/index.ts     最小 contextBridge，只暴露业务函数
 ├─ shared/              主进程与渲染进程共用，纯函数、可单测
 │  ├─ types.ts          全部数据契约
@@ -122,15 +129,24 @@ src/
    │  ├─ workspace/     查询工作区：上下文条、请求栏、构建器/编辑器、结果区
    │  ├─ query-builder/ 条件行、字段选择、操作符选择、值控件、校验面板
    │  ├─ dsl-editor/    CodeMirror 6 封装
-   │  ├─ results/       结果视图、耗时条、表格、JSON、聚合、分页
+   │  ├─ results/       结果视图（命中/数组/键值表格）、耗时条、JSON、聚合、分页
    │  ├─ diagnostics/   集群诊断页
-   │  └─ connections/   连接对话框
+   │  └─ connections/   新建 / 编辑连接对话框、连接测试
    ├─ stores/           界面状态（Zustand）与当前查询文档
    ├─ lib/              API 封装、Query Client、主题、数据 hooks
    └─ styles/           globals.css：shadcn 主题变量、Tailwind 入口、动效
 docs/                  GitHub Pages 落地页与截图
 build/                 应用图标（打包用）
 ```
+
+## 凭证存储
+
+连接密码、Token、API Key 不会以明文写入配置文件：
+
+- 先用系统钥匙串（Electron `safeStorage`）加密，再把密文写入 `userData/vault.db`（SQLite，`node:sqlite`，无需原生模块）。
+- `connections.json` 只保存连接配置与认证方式的类型，不包含任何密钥。
+- 旧版本的 `secrets.json` 会在首次启动时自动迁移进 `vault.db`，原文件改名为 `secrets.json.migrated` 保留。
+- 数据库文件即使被复制走，没有当前系统用户的钥匙串密钥也无法解密。
 
 分层约定：
 
@@ -169,12 +185,14 @@ build/                 应用图标（打包用）
 - 聚合视图只渲染 terms 桶，stats、histogram 等会退化为 JSON 展示。
 - Profile 视图仍是占位，待接入真实集群的 profile 响应。
 - 撤销栈（Ctrl Z）尚未实现。
-- `pnpm dist` 未配置代码签名与自动更新。
+- 自动更新只在 Windows 与 macOS 打包版本上生效（开发模式与 Linux 跳过）。
+- `pnpm dist` 未配置代码签名，Windows 首次运行会有 SmartScreen 提示；macOS 未公证。
 
 ## 发布与网页
 
 - **CI**：`.github/workflows/ci.yml` 在 push / PR 到 `main` 时跑类型检查、单测与构建。
 - **发布**：推送 `v*` 标签（如 `v0.1.0`）触发 `.github/workflows/release.yml`，在 Windows runner 上打包并上传安装包到 GitHub Release（`--publish never` + `action-gh-release`，不需要额外 token）。
+- **自动更新**：`build.publish` 指向本仓库，打包会生成 `latest.yml` 与 `app-update.yml`；应用启动后会检查 GitHub Releases，发现新版本时用系统对话框询问是否下载与重启安装。
 - **GitHub Pages**：`docs/` 本身就是可发布的静态页面，两种启用方式：
   - 最省事：Settings → Pages → Source 选 **Deploy from a branch**，分支 `main`、目录 `/docs`。保存后一两分钟即可访问 `https://nickiilord.github.io/elastic-tool/`，不需要 Actions 权限。
   - 用 Actions 部署：Settings → Pages → Source 选 **GitHub Actions**（必须由仓库所有者操作一次，GitHub 不允许工作流用默认 token 创建 Pages 站点），然后在 Actions → Pages 手动运行 `.github/workflows/pages.yml`。工作流不再随 push 自动触发，避免未启用时产生失败记录。

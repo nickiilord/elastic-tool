@@ -4,6 +4,7 @@ import {
   ChevronDown,
   Minus,
   Moon,
+  Pencil,
   Plus,
   RefreshCw,
   Settings,
@@ -20,7 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Separator } from '@/components/ui/separator'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useConnections } from '@/lib/hooks/use-connections'
+import { useConnectionStatus, useConnections } from '@/lib/hooks/use-connections'
 import { useTheme } from '@/lib/hooks/use-theme'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -34,6 +35,12 @@ const ENV_LABEL: Record<ConnectionSummary['environment'], string> = {
   prod: 'prod',
   staging: 'stg',
   dev: 'dev'
+}
+
+const ENV_TEXT: Record<ConnectionSummary['environment'], string> = {
+  prod: 'text-red-600 dark:text-red-400',
+  staging: 'text-amber-600 dark:text-amber-400',
+  dev: 'text-blue-600 dark:text-blue-400'
 }
 
 function TrafficLights(): React.JSX.Element {
@@ -100,6 +107,18 @@ export function TitleBar(): React.JSX.Element {
     () => connections.find((connection) => connection.id === connectionId) ?? connections[0],
     [connections, connectionId]
   )
+  const status = useConnectionStatus(connectionId)
+  const statusInfo = status.data
+  const statusDot = statusInfo
+    ? statusInfo.ok
+      ? 'bg-emerald-500'
+      : 'bg-red-500'
+    : 'bg-muted-foreground/40'
+  const statusTitle = statusInfo
+    ? statusInfo.ok
+      ? `已连接 · ${statusInfo.latencyMs} ms${statusInfo.version ? ` · v${statusInfo.version}` : ''}`
+      : `连接失败${statusInfo.error ? ` · ${statusInfo.error}` : ''}`
+    : '正在检测连接…'
 
   const refresh = (): void => {
     void queryClient.invalidateQueries({ queryKey: ['indices'] })
@@ -130,14 +149,14 @@ export function TitleBar(): React.JSX.Element {
 
       <Popover open={switcherOpen} onOpenChange={setSwitcherOpen}>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="sm" className="gap-2 px-2 text-xs">
-            <span
-              className={cn(
-                'size-2 rounded-full',
-                active ? ENV_DOT[active.environment] : 'bg-muted-foreground/40'
-              )}
-            />
+          <Button variant="ghost" size="sm" className="gap-2 px-2 text-xs" title={statusTitle}>
+            <span className={cn('size-2 rounded-full', statusDot)} />
             <span className="max-w-40 truncate">{active?.name ?? '未连接'}</span>
+            {active ? (
+              <span className={cn('text-xs', ENV_TEXT[active.environment])}>
+                {ENV_LABEL[active.environment]}
+              </span>
+            ) : null}
             {active?.readOnly ? (
               <Badge variant="outline" className="h-5 rounded-md px-1.5 text-xs">
                 只读
@@ -169,6 +188,18 @@ export function TitleBar(): React.JSX.Element {
                     {ENV_LABEL[connection.environment]}
                   </span>
                 </button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="shrink-0 text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
+                  aria-label="编辑连接"
+                  onClick={() => {
+                    setSwitcherOpen(false)
+                    openConnectionDialog(connection.id)
+                  }}
+                >
+                  <Pencil className="size-3.5" />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon-xs"

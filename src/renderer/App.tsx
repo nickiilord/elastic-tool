@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useConnections } from '@/lib/hooks/use-connections'
+import { useConnectionStatus, useConnections } from '@/lib/hooks/use-connections'
 import { useThemeEffect } from '@/lib/hooks/use-theme'
 import { useUiStore } from '@/stores/ui-store'
 import { TitleBar } from '@/components/layout/title-bar'
@@ -33,11 +33,26 @@ function AppShell(): React.JSX.Element {
   const queryClient = useQueryClient()
 
   const { data: connections = [] } = useConnections()
+  const status = useConnectionStatus(connectionId)
+  const wasOnline = useRef(false)
 
   useThemeEffect()
 
+  // 连接从失败恢复为成功时，索引、mapping 与诊断数据都需要重新拉取
   useEffect(() => {
-    if (!connectionId && connections.length > 0) {
+    const online = status.data?.ok ?? false
+    if (online && !wasOnline.current) {
+      void queryClient.invalidateQueries({ queryKey: ['indices'] })
+      void queryClient.invalidateQueries({ queryKey: ['schema'] })
+      void queryClient.invalidateQueries({ queryKey: ['diagnostics'] })
+    }
+    wasOnline.current = online
+  }, [status.data, queryClient])
+
+  useEffect(() => {
+    if (connections.length === 0) return
+    // 恢复的连接可能已经被删除，回退到第一个可用连接
+    if (!connectionId || !connections.some((connection) => connection.id === connectionId)) {
       setConnection(connections[0].id)
     }
   }, [connectionId, connections, setConnection])

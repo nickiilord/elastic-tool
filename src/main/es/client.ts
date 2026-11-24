@@ -3,6 +3,7 @@ import { request as httpsRequest } from 'node:https'
 import type { Auth } from '@shared/types'
 
 export interface EsHttpOptions {
+  /** 支持逗号分隔的多个节点地址，按顺序尝试。 */
   baseUrl: string
   path: string
   method: string
@@ -51,10 +52,10 @@ function joinPath(base: string, path: string): string {
   return `${trimmed}${suffix}`
 }
 
-export function esHttpRequest(options: EsHttpOptions): Promise<EsHttpResult> {
+function attemptRequest(targetUrl: string, options: EsHttpOptions): Promise<EsHttpResult> {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now()
-    const target = new URL(options.baseUrl)
+    const target = new URL(targetUrl)
     const isHttps = target.protocol === 'https:'
     const payload = options.body === undefined ? undefined : JSON.stringify(options.body)
     const authorization = authorizationHeader(options.auth)
@@ -137,4 +138,36 @@ export function esHttpRequest(options: EsHttpOptions): Promise<EsHttpResult> {
     if (payload) req.write(payload)
     req.end()
   })
+}
+
+/**
+ * 依次尝试多个节点地址：只有网络层失败或超时才切换到下一个节点，
+ * 节点返回了 HTTP 响应（包括 4xx/5xx）就直接交给上层处理。
+ */
+export async function esHttpRequest(options: EsHttpOptions): Promise<EsHttpResult> {
+  const targets = options.baseUrl
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+  if (targets.length === 0) {
+    throw new EsRequestError('连接地址为空', 'network')
+  }
+
+  let lastError: EsRequestError | null = null
+  for (const target of targets) {
+    if (options.signal?.aborted) {
+      throw new EsRequestError('请求已取消', 'canceled')
+    }
+    try {
+      return await attemptRequest(target, options)
+    } catch (error) {
+      lastError =
+        error instanceof EsRequestError ? error : new EsRequestError(String(error), 'network')
+      if (lastError.kind === 'canceled') throw lastError
+      if (lastError.kind === 'network' || lastError.kind === 'timeout') continue
+      throw lastError
+    }
+  }
+
+  throw lastError ?? new EsRequestError('所有节点均不可用', 'network')
 }

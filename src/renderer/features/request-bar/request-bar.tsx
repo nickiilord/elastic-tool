@@ -3,9 +3,11 @@ import { Check, ChevronDown, Copy, Play, RotateCw, Terminal } from 'lucide-react
 import { buildPath, getOperation, listOperations } from '@shared/operations'
 import type { OperationId } from '@shared/operations'
 import { cn, toggleActiveClass } from '@/lib/utils'
+import { copyText } from '@/lib/clipboard'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Command, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import { Input } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
@@ -21,11 +23,13 @@ export function RequestBar({
   index,
   connectionId,
   dslText,
+  docId,
+  needsDocId,
+  onDocIdChange,
   readOnly,
   onRun,
   running,
-  canRun,
-  onCopy
+  canRun
 }: {
   mode: 'builder' | 'dsl'
   onModeChange: (mode: 'builder' | 'dsl') => void
@@ -34,27 +38,36 @@ export function RequestBar({
   index: string | null
   connectionId: string | null
   dslText: string
+  docId: string
+  needsDocId: boolean
+  onDocIdChange: (docId: string) => void
   readOnly: boolean
   onRun: () => void
   running: boolean
   canRun: boolean
-  onCopy: () => void
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [copiedCurl, setCopiedCurl] = useState(false)
+  const [copiedDsl, setCopiedDsl] = useState(false)
   const operation = getOperation(operationId)
-  const path = operation ? buildPath(operation, { index }) : '/'
+  const path = operation ? buildPath(operation, { index, docId: docId.trim() || '…' }) : '/'
 
   const copyCurl = async (): Promise<void> => {
     if (!connectionId) return
     try {
       const command = await window.api.es.curl({ connectionId, operationId, index, dslText })
-      await navigator.clipboard.writeText(command)
-      setCopiedCurl(true)
-      window.setTimeout(() => setCopiedCurl(false), 1500)
+      const copiedOk = await copyText(command)
+      setCopiedCurl(copiedOk)
+      if (copiedOk) window.setTimeout(() => setCopiedCurl(false), 1500)
     } catch {
       setCopiedCurl(false)
     }
+  }
+
+  const copyDsl = async (): Promise<void> => {
+    const copiedOk = await copyText(dslText)
+    setCopiedDsl(copiedOk)
+    if (copiedOk) window.setTimeout(() => setCopiedDsl(false), 1500)
   }
 
   return (
@@ -130,6 +143,17 @@ export function RequestBar({
         </PopoverContent>
       </Popover>
 
+      {needsDocId ? (
+        <Input
+          value={docId}
+          onChange={(event) => onDocIdChange(event.target.value)}
+          placeholder="文档 _id"
+          aria-label="文档 ID"
+          aria-invalid={!docId.trim() || undefined}
+          className="h-8 w-36 text-xs"
+        />
+      ) : null}
+
       <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-muted/30 px-2">
         <span className="truncate text-xs">
           {path.split('/').map((segment, position) => (
@@ -179,13 +203,17 @@ export function RequestBar({
             variant="ghost"
             size="icon-sm"
             aria-label="复制 DSL"
-            onClick={onCopy}
+            onClick={() => void copyDsl()}
             disabled={!operation}
           >
-            <Copy className="size-3.5" />
+            {copiedDsl ? (
+              <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+            ) : (
+              <Copy className="size-3.5" />
+            )}
           </Button>
         </TooltipTrigger>
-        <TooltipContent>复制 DSL</TooltipContent>
+        <TooltipContent>{copiedDsl ? '已复制' : '复制 DSL'}</TooltipContent>
       </Tooltip>
     </div>
   )

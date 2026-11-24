@@ -15,6 +15,8 @@ export const defaultOptions: QueryOptions = {
   sort: null
 }
 
+const STORAGE_KEY = 'elastic-tool:query'
+
 function createDocument(connectionId: string, index: string, title?: string): QueryDocument {
   return {
     id: createId('doc'),
@@ -28,12 +30,42 @@ function createDocument(connectionId: string, index: string, title?: string): Qu
     dslText: '{}',
     dirty: false,
     resultTab: 'table',
-    page: 0
+    page: 0,
+    docId: ''
   }
 }
 
 function draftKey(connectionId: string, index: string | null): string {
   return `${connectionId}::${index ?? ''}`
+}
+
+function isQueryDocument(value: unknown): value is QueryDocument {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<QueryDocument>
+  return Boolean(candidate.id && candidate.connectionId && candidate.tree && candidate.options)
+}
+
+interface PersistedQueryState {
+  document: QueryDocument | null
+  drafts: Record<string, QueryDocument>
+}
+
+function readPersistedState(): PersistedQueryState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return { document: null, drafts: {} }
+    const parsed = JSON.parse(raw) as Partial<PersistedQueryState>
+    const document = isQueryDocument(parsed.document) ? parsed.document : null
+    const drafts: Record<string, QueryDocument> = {}
+    if (parsed.drafts && typeof parsed.drafts === 'object') {
+      for (const [key, value] of Object.entries(parsed.drafts)) {
+        if (isQueryDocument(value)) drafts[key] = value
+      }
+    }
+    return { document, drafts }
+  } catch {
+    return { document: null, drafts: {} }
+  }
 }
 
 interface QueryState {
@@ -47,9 +79,11 @@ interface QueryState {
   reset: () => void
 }
 
+const persisted = readPersistedState()
+
 export const useQueryStore = create<QueryState>((set, get) => ({
-  document: null,
-  drafts: {},
+  document: persisted.document,
+  drafts: persisted.drafts,
 
   load: (connectionId, index) => {
     const state = get()
@@ -106,3 +140,19 @@ export const useQueryStore = create<QueryState>((set, get) => ({
 export function useQueryDocument(): QueryDocument | null {
   return useQueryStore((state) => state.document)
 }
+
+// 查询草稿写回 localStorage：编辑时每次按键都会更新状态，用防抖减少写入。
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+useQueryStore.subscribe((state) => {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ document: state.document, drafts: state.drafts })
+      )
+    } catch {
+      // 写入失败（配额或隐私模式）时忽略，不影响本次会话
+    }
+  }, 400)
+})

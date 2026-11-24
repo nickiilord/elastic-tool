@@ -1,14 +1,22 @@
 import { BrowserWindow, nativeTheme, shell } from 'electron'
 import { join } from 'node:path'
+import {
+  MIN_WINDOW_HEIGHT,
+  MIN_WINDOW_WIDTH,
+  loadWindowState,
+  trackWindowState
+} from './window-state'
 
 export function createMainWindow(): BrowserWindow {
   const isMac = process.platform === 'darwin'
+  const state = loadWindowState()
 
   const window = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 1160,
-    minHeight: 720,
+    width: state.width,
+    height: state.height,
+    ...(state.x !== undefined && state.y !== undefined ? { x: state.x, y: state.y } : {}),
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
     show: false,
     autoHideMenuBar: true,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0a0a0a' : '#ffffff',
@@ -22,6 +30,10 @@ export function createMainWindow(): BrowserWindow {
       spellcheck: false
     }
   })
+
+  // 恢复上次的最大化状态，并开始跟踪位置与尺寸变化
+  if (state.maximized) window.maximize()
+  trackWindowState(window)
 
   window.on('ready-to-show', () => window.show())
 

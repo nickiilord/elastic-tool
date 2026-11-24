@@ -304,4 +304,6 @@ export interface QueryDocument {
   resultTab: ResultTab
   /** 当前结果页，从 0 开始。翻页时按 page × size 计算 from。 */
   page: number
+  /** 需要文档 _id 的操作（按 ID 取文档、写入、更新、删除）使用。 */
+  docId: string
 }

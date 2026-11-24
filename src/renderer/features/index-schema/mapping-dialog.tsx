@@ -1,5 +1,6 @@
 import { Check, Copy } from 'lucide-react'
 import { useState } from 'react'
+import { copyText } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -26,9 +27,9 @@ export function MappingDialog({
   const text = JSON.stringify(mapping ?? {}, null, 2)
 
   const copy = async (): Promise<void> => {
-    await navigator.clipboard.writeText(text)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1500)
+    const copiedOk = await copyText(text)
+    setCopied(copiedOk)
+    if (copiedOk) window.setTimeout(() => setCopied(false), 1500)
   }
 
   return (

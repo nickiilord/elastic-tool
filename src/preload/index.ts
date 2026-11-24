@@ -26,7 +26,9 @@ const api: RendererApi = {
     list: () => invoke(IPC.connectionList),
     save: (input) => invoke(IPC.connectionSave, input),
     remove: (id) => invoke(IPC.connectionRemove, id),
-    test: (id) => invoke(IPC.connectionTest, id)
+    test: (id) => invoke(IPC.connectionTest, id),
+    detail: (id) => invoke(IPC.connectionDetail, id),
+    testDraft: (input) => invoke(IPC.connectionTestDraft, input)
   },
   indices: {
     list: (connectionId) => invoke(IPC.indexList, connectionId),
@@ -58,6 +60,9 @@ const api: RendererApi = {
     close: () => ipcRenderer.invoke('window:close'),
     isMaximized: () => ipcRenderer.invoke('window:is-maximized'),
     setTheme: (preference) => ipcRenderer.invoke('window:set-theme', preference)
+  },
+  clipboard: {
+    writeText: (text) => ipcRenderer.invoke('clipboard:write', text)
   }
 }
 

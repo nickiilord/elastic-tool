@@ -13,7 +13,7 @@ export class ConnectionStore {
 
   constructor(private dir: string) {
     mkdirSync(dir, { recursive: true })
-    this.secrets = new SecretStore(join(dir, 'secrets.json'))
+    this.secrets = new SecretStore(dir)
     this.load()
     this.ensureDemo()
   }
@@ -84,10 +84,12 @@ export class ConnectionStore {
       updatedAt: now
     }
 
-    if (input.auth.type !== 'none') {
-      this.secrets.set(id, input.auth)
-    } else {
+    if (input.auth.type === 'none') {
       this.secrets.delete(id)
+    } else {
+      // 编辑连接时表单不回填密码，留空表示沿用旧凭证，只更新用户名一类可见字段
+      const previous = this.secrets.get(id)
+      this.secrets.set(id, mergeAuth(previous, input.auth))
     }
 
     if (existing) {
@@ -125,4 +127,21 @@ export class ConnectionStore {
     })
     this.persist()
   }
+}
+
+/**
+ * 编辑连接时密码类字段留空表示不修改：保留旧凭证里的密文，只替换用户名一类的可见字段。
+ */
+export function mergeAuth(previous: Auth | null, next: Auth): Auth {
+  if (!previous || previous.type !== next.type) return next
+  if (next.type === 'basic' && previous.type === 'basic') {
+    return { type: 'basic', username: next.username, password: next.password || previous.password }
+  }
+  if (next.type === 'apiKey' && previous.type === 'apiKey') {
+    return { type: 'apiKey', id: next.id, key: next.key || previous.key }
+  }
+  if (next.type === 'bearer' && previous.type === 'bearer') {
+    return { type: 'bearer', token: next.token || previous.token }
+  }
+  return next
 }

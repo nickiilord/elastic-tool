@@ -16,6 +16,7 @@ export interface RunInput {
   operationId: string
   dsl: Record<string, unknown> | null
   dslText?: string
+  params?: Record<string, string>
 }
 
 function toErrorPayload(error: unknown): EsErrorPayload {
@@ -34,6 +35,7 @@ function toErrorPayload(error: unknown): EsErrorPayload {
 export function useRunner(): RunnerState & {
   run: (input: RunInput) => Promise<void>
   cancel: () => void
+  reset: () => void
 } {
   const [state, setState] = useState<RunnerState>({
     status: 'idle',
@@ -54,7 +56,8 @@ export function useRunner(): RunnerState & {
       operationId: input.operationId,
       dsl: input.dsl,
       dslText: input.dslText,
-      requestId
+      requestId,
+      params: input.params
     }
 
     try {
@@ -75,5 +78,11 @@ export function useRunner(): RunnerState & {
     setState((previous) => ({ ...previous, status: 'idle', requestId: null }))
   }, [])
 
-  return { ...state, run, cancel }
+  /** 切换连接、索引或连接配置变化时清空结果，避免展示上一份查询的数据。 */
+  const reset = useCallback(() => {
+    activeId.current = null
+    setState({ status: 'idle', result: null, error: null, requestId: null })
+  }, [])
+
+  return { ...state, run, cancel, reset }
 }

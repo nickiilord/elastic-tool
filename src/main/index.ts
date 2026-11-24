@@ -7,7 +7,10 @@ import { HistoryStore } from './services/history-store'
 import { SavedStore } from './services/saved-store'
 import { SchemaCache } from './services/schema-cache'
 import { MetricsSampler } from './services/metrics'
+import { setupApplicationMenu } from './menu'
+import { setupAutoUpdater } from './updater'
 import { createMainWindow } from './window'
+import { saveWindowStateNow } from './window-state'
 
 // 开发与自动化调试时开放 CDP 端口，生产不读取该变量。
 const debugPort = process.env.ES_PROBE_DEBUG_PORT
@@ -67,7 +70,9 @@ function openWindow(): void {
 }
 
 app.whenReady().then(() => {
+  setupApplicationMenu()
   openWindow()
+  setupAutoUpdater()
 
   app.on('second-instance', () => {
     if (!mainWindow) return
@@ -80,6 +85,11 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   sampler?.stop()
   if (process.platform !== 'darwin') app.quit()
+})
+
+// 退出前再保存一次窗口状态
+app.on('before-quit', () => {
+  saveWindowStateNow()
 })
 
 app.on('activate', () => {

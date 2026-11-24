@@ -1,10 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { ChevronDown, ChevronRight, Plus, Trash2, X } from 'lucide-react'
 import type { ConnectionSummary, HistoryEntry, IndexSummary, SavedQuery } from '@shared/types'
 import { formatCount } from '@shared/format'
+import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useConnections } from '@/lib/hooks/use-connections'
@@ -36,27 +46,34 @@ function SectionHeader({
   expanded,
   onToggle,
   label,
-  count
+  count,
+  trailing
 }: {
   expanded: boolean
   onToggle: () => void
   label: string
   count: number
+  trailing?: React.ReactNode
 }): React.JSX.Element {
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="flex h-8 w-full items-center gap-1.5 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
-    >
-      {expanded ? (
-        <ChevronDown className="size-3.5 shrink-0" />
-      ) : (
-        <ChevronRight className="size-3.5 shrink-0" />
-      )}
-      <span className="flex-1 text-left">{label}</span>
-      {count > 0 ? <span className="text-xs tabular-nums text-muted-foreground/70">{count}</span> : null}
-    </button>
+    <div className="flex h-8 items-center rounded-md pr-1 transition-colors hover:bg-accent/60">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {expanded ? (
+          <ChevronDown className="size-3.5 shrink-0" />
+        ) : (
+          <ChevronRight className="size-3.5 shrink-0" />
+        )}
+        <span className="flex-1 text-left">{label}</span>
+        {count > 0 ? (
+          <span className="text-xs tabular-nums text-muted-foreground/70">{count}</span>
+        ) : null}
+      </button>
+      {trailing}
+    </div>
   )
 }
 
@@ -68,6 +85,7 @@ export function Sidebar(): React.JSX.Element {
   const openSaveQuery = useUiStore((state) => state.openSaveQuery)
   const load = useQueryStore((state) => state.load)
   const update = useQueryStore((state) => state.update)
+  const queryClient = useQueryClient()
 
   const { data: connections = [] } = useConnections()
   const { data: indices = [] } = useIndices(connectionId)
@@ -77,6 +95,7 @@ export function Sidebar(): React.JSX.Element {
 
   const [savedOpen, setSavedOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [clearOpen, setClearOpen] = useState(false)
 
   useEffect(() => {
     setSavedOpen(false)
@@ -115,6 +134,17 @@ export function Sidebar(): React.JSX.Element {
     update({ operationId: entry.operationId, page: 0 })
   }
 
+  const removeSaved = async (id: string): Promise<void> => {
+    await api.saved.remove(id)
+    await queryClient.invalidateQueries({ queryKey: ['saved'] })
+  }
+
+  const clearHistory = async (): Promise<void> => {
+    await api.history.clear()
+    await queryClient.invalidateQueries({ queryKey: ['history'] })
+    setClearOpen(false)
+  }
+
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-sidebar">
       <div className="flex h-10 shrink-0 items-center justify-between px-3">
@@ -138,7 +168,9 @@ export function Sidebar(): React.JSX.Element {
         {activeConnection ? (
           <>
             <div className="flex h-8 items-center gap-2 rounded-md px-1.5">
-              <span className={cn('size-2 shrink-0 rounded-full', ENV_DOT[activeConnection.environment])} />
+              <span
+                className={cn('size-2 shrink-0 rounded-full', ENV_DOT[activeConnection.environment])}
+              />
               <span className="min-w-0 flex-1 truncate text-xs font-medium">
                 {activeConnection.name}
               </span>
@@ -166,7 +198,9 @@ export function Sidebar(): React.JSX.Element {
                           : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
                       )}
                     >
-                      <span className={cn('size-1.5 shrink-0 rounded-full', HEALTH_DOT[entry.health])} />
+                      <span
+                        className={cn('size-1.5 shrink-0 rounded-full', HEALTH_DOT[entry.health])}
+                      />
                       <span
                         className={cn(
                           'min-w-0 flex-1 truncate text-xs',
@@ -185,7 +219,9 @@ export function Sidebar(): React.JSX.Element {
             </div>
           </>
         ) : (
-          <p className="px-2 py-3 text-xs text-muted-foreground">未选择连接，点击右上角新建连接。</p>
+          <p className="px-2 py-3 text-xs text-muted-foreground">
+            还没有选中连接，点资源树右上角的 + 新建连接。
+          </p>
         )}
 
         <Separator className="my-2" />
@@ -202,14 +238,27 @@ export function Sidebar(): React.JSX.Element {
           ) : (
             <div className="animate-in fade-in-0 slide-in-from-top-1 space-y-px duration-150">
               {connectionSaved.map((item) => (
-                <button
+                <div
                   key={item.id}
-                  type="button"
-                  onClick={() => replaySaved(item)}
-                  className="flex h-8 w-full items-center rounded-md pl-6 pr-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+                  className="group flex h-8 items-center rounded-md pl-6 pr-1 transition-colors hover:bg-accent/60"
                 >
-                  <span className="min-w-0 flex-1 truncate">{item.name}</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => replaySaved(item)}
+                    className="min-w-0 flex-1 truncate text-left text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {item.name}
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="size-6 shrink-0 text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100"
+                    aria-label="删除收藏"
+                    onClick={() => void removeSaved(item.id)}
+                  >
+                    <X className="size-3.5" />
+                  </Button>
+                </div>
               ))}
             </div>
           )
@@ -220,6 +269,24 @@ export function Sidebar(): React.JSX.Element {
           onToggle={() => setHistoryOpen((open) => !open)}
           label="历史记录"
           count={history.length}
+          trailing={
+            history.length > 0 ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="size-6 text-muted-foreground hover:text-destructive"
+                    aria-label="清空历史记录"
+                    onClick={() => setClearOpen(true)}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>清空历史记录</TooltipContent>
+              </Tooltip>
+            ) : undefined
+          }
         />
         {historyOpen ? (
           history.length === 0 ? (
@@ -263,6 +330,25 @@ export function Sidebar(): React.JSX.Element {
         <Plus className="size-3.5" />
         保存当前查询
       </button>
+
+      <Dialog open={clearOpen} onOpenChange={setClearOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>清空历史记录</DialogTitle>
+            <DialogDescription>
+              将删除当前连接的全部执行记录，收藏查询不受影响。此操作不可撤销。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClearOpen(false)}>
+              取消
+            </Button>
+            <Button variant="destructive" onClick={() => void clearHistory()}>
+              清空
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </aside>
   )
 }

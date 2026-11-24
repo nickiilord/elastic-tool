@@ -1,6 +1,6 @@
 {
   "name": "elastic-tool",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Elasticsearch desktop client built with Electron, React and shadcn/ui",
   "main": "./out/main/index.js",
   "license": "MIT",
@@ -15,6 +15,7 @@
     "ui:add": "node scripts/add-ui.mjs"
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -50,9 +51,17 @@
   "build": {
     "appId": "com.elastictool.desktop",
     "productName": "elastic-tool",
+    "artifactName": "elastic-tool-Setup-${version}.${ext}",
     "directories": {
       "output": "dist"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "nickiilord",
+        "repo": "elastic-tool"
+      }
+    ],
     "files": [
       "**/*",
       "!src/**/*",
@@ -72,7 +81,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },

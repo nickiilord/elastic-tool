@@ -14,6 +14,7 @@ import {
 import type { EsErrorPayload, EsRunResult, ResultTab } from '@shared/types'
 import { formatDuration, formatNumber } from '@shared/format'
 import { cn } from '@/lib/utils'
+import { copyText } from '@/lib/clipboard'
 import { downloadText } from '@/lib/download'
 import { toCsv } from '@shared/export'
 import { Badge } from '@/components/ui/badge'
@@ -65,29 +66,69 @@ function cellText(value: unknown): string {
   return JSON.stringify(value)
 }
 
-function collectRows(result: EsRunResult | null): {
-  columns: string[]
-  rows: Array<{ _id: string; _score: number; values: Record<string, unknown> }>
-} {
-  if (!result || !isRecord(result.body)) return { columns: [], rows: [] }
-  const hitsContainer = isRecord(result.body.hits) ? result.body.hits : null
-  const rawHits = hitsContainer && Array.isArray(hitsContainer.hits) ? hitsContainer.hits : []
-  const rows: Array<{ _id: string; _score: number; values: Record<string, unknown> }> = []
-  const columnSet = new Set<string>()
+type RowKind = 'hits' | 'array' | 'object'
 
-  for (const raw of rawHits) {
-    if (!isRecord(raw)) continue
-    const source = isRecord(raw._source) ? raw._source : {}
-    const flattened = flattenSource(source)
-    for (const key of Object.keys(flattened)) columnSet.add(key)
-    rows.push({
-      _id: String(raw._id ?? ''),
-      _score: Number(raw._score ?? 0),
-      values: flattened
-    })
+interface ResultRow {
+  id: string
+  score: number
+  values: Record<string, unknown>
+}
+
+interface CollectedRows {
+  kind: RowKind
+  columns: string[]
+  rows: ResultRow[]
+}
+
+function collectRows(result: EsRunResult | null): CollectedRows {
+  if (!result) return { kind: 'object', columns: [], rows: [] }
+  const body = result.body
+
+  // 搜索类响应：hits.hits
+  if (isRecord(body) && isRecord(body.hits) && Array.isArray(body.hits.hits)) {
+    const rows: ResultRow[] = []
+    const columnSet = new Set<string>()
+    for (const raw of body.hits.hits) {
+      if (!isRecord(raw)) continue
+      const source = isRecord(raw._source) ? raw._source : {}
+      const flattened = flattenSource(source)
+      for (const key of Object.keys(flattened)) columnSet.add(key)
+      rows.push({ id: String(raw._id ?? ''), score: Number(raw._score ?? 0), values: flattened })
+    }
+    return { kind: 'hits', columns: [...columnSet], rows }
   }
 
-  return { columns: [...columnSet], rows }
+  // _cat 类响应：顶层就是数组，每个元素是一行
+  if (Array.isArray(body)) {
+    const rows: ResultRow[] = []
+    const columnSet = new Set<string>()
+    body.forEach((item, position) => {
+      if (!isRecord(item)) {
+        rows.push({ id: String(position), score: 0, values: { value: item } })
+        return
+      }
+      const flattened = flattenSource(item)
+      for (const key of Object.keys(flattened)) columnSet.add(key)
+      rows.push({ id: String(position), score: 0, values: flattened })
+    })
+    return { kind: 'array', columns: [...columnSet], rows }
+  }
+
+  // 其余对象（count、集群健康、mapping 等）：按「字段 / 值」两列展示
+  if (isRecord(body)) {
+    const flattened = flattenSource(body)
+    return {
+      kind: 'object',
+      columns: ['字段', '值'],
+      rows: Object.entries(flattened).map(([key, value]) => ({
+        id: key,
+        score: 0,
+        values: { key, value }
+      }))
+    }
+  }
+
+  return { kind: 'object', columns: [], rows: [] }
 }
 
 const COLUMN_WIDTHS: Record<string, number> = {
@@ -97,6 +138,54 @@ const COLUMN_WIDTHS: Record<string, number> = {
   '@timestamp': 168,
   'user.id': 116,
   latency_ms: 92
+}
+
+/** 表头：hover 时显示复制按钮，复制该列当前页的全部值（按行换行）。 */
+function CopyableTh({
+  label,
+  values,
+  width,
+  minWidth
+}: {
+  label: string
+  values: string[]
+  width?: number
+  minWidth?: number
+}): React.JSX.Element {
+  const [copied, setCopied] = useState(false)
+
+  const copy = async (): Promise<void> => {
+    const copiedOk = await copyText(values.join('\n'))
+    setCopied(copiedOk)
+    if (copiedOk) window.setTimeout(() => setCopied(false), 1200)
+  }
+
+  return (
+    <th
+      className="group/th h-9 whitespace-nowrap border-b border-border px-3 text-left font-medium"
+      style={{ width, minWidth }}
+    >
+      <span className="flex items-center gap-1">
+        <span className="truncate">{label}</span>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          aria-label={`复制列 ${label}`}
+          title={`复制列 ${label}（当前页 ${values.length} 行）`}
+          className={cn(
+            'shrink-0 rounded-sm p-1 text-muted-foreground opacity-0 transition-colors hover:bg-accent hover:text-foreground group-hover/th:opacity-100',
+            copied && 'bg-emerald-500/10 text-emerald-600 opacity-100 dark:text-emerald-400'
+          )}
+        >
+          {copied ? (
+            <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+          ) : (
+            <Copy className="size-3.5" />
+          )}
+        </button>
+      </span>
+    </th>
+  )
 }
 
 export function ResultsPanel({
@@ -110,7 +199,7 @@ export function ResultsPanel({
   pageSize = 20,
   onPageChange
 }: ResultsProps): React.JSX.Element {
-  const { columns, rows } = collectRows(result)
+  const { kind, columns, rows } = collectRows(result)
   const total = result?.total
   const running = status === 'running'
   const failed = status === 'error'
@@ -139,7 +228,7 @@ export function ResultsPanel({
           <TabsList variant="line">
             <TabsTrigger value="table" className="gap-1 px-3">
               表格
-              {rows.length > 0 ? (
+              {kind !== 'object' && rows.length > 0 ? (
                 <Badge variant="secondary" className="px-1 tabular-nums">
                   {rows.length}
                 </Badge>
@@ -188,7 +277,13 @@ export function ResultsPanel({
               </Button>
             </div>
           ) : null}
-          <ExportMenu result={result} rows={rows} columns={columns} index={indexName(result)} />
+          <ExportMenu
+            result={result}
+            kind={kind}
+            rows={rows}
+            columns={columns}
+            index={indexName(result)}
+          />
         </div>
 
         <div className="flex h-8 shrink-0 items-center gap-3 overflow-hidden border-b border-border px-3 text-xs text-muted-foreground">
@@ -285,62 +380,135 @@ export function ResultsPanel({
             <>
               <TabsContent
                 value="table"
-                className="animate-in fade-in-0 flex-1 overflow-auto duration-200"
+                className="animate-in fade-in-0 flex-1 select-text overflow-auto duration-200"
               >
-                {rows.length === 0 ? (
+                {kind === 'hits' ? (
+                  rows.length === 0 ? (
+                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                      没有匹配的文档
+                    </div>
+                  ) : (
+                    <table className="w-full border-collapse text-xs">
+                      <thead className="sticky top-0 z-10 bg-muted/60 text-xs text-muted-foreground backdrop-blur">
+                        <tr>
+                          <CopyableTh label="_id" values={rows.map((row) => row.id)} width={150} />
+                          <CopyableTh
+                            label="_score"
+                            values={rows.map((row) => row.score.toFixed(1))}
+                            width={64}
+                          />
+                          {columns.map((column) => (
+                            <CopyableTh
+                              key={column}
+                              label={column}
+                              values={rows.map((row) => cellText(row.values[column]))}
+                              width={COLUMN_WIDTHS[column] ?? 120}
+                              minWidth={100}
+                            />
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((row) => (
+                          <tr
+                            key={row.id}
+                            className="h-9 border-b border-border/60 transition-colors hover:bg-muted/40"
+                          >
+                            <td className="max-w-[420px] truncate px-3 text-xs tabular-nums">
+                              {row.id}
+                            </td>
+                            <td className="truncate px-3 text-xs tabular-nums text-muted-foreground">
+                              {row.score.toFixed(1)}
+                            </td>
+                            {columns.map((column) => (
+                              <td
+                                key={column}
+                                className={cn(
+                                  'max-w-[420px] truncate px-3 text-xs',
+                                  cellTone(column, row.values[column])
+                                )}
+                              >
+                                {cellText(row.values[column])}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )
+                ) : kind === 'array' ? (
+                  rows.length === 0 ? (
+                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                      没有返回行
+                    </div>
+                  ) : (
+                    <table className="w-full border-collapse text-xs">
+                      <thead className="sticky top-0 z-10 bg-muted/60 text-xs text-muted-foreground backdrop-blur">
+                        <tr>
+                          {columns.map((column) => (
+                            <CopyableTh
+                              key={column}
+                              label={column}
+                              values={rows.map((row) => cellText(row.values[column]))}
+                              width={COLUMN_WIDTHS[column] ?? 120}
+                              minWidth={100}
+                            />
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((row, position) => (
+                          <tr
+                            key={`${row.id}-${position}`}
+                            className="h-9 border-b border-border/60 transition-colors hover:bg-muted/40"
+                          >
+                            {columns.map((column) => (
+                              <td
+                                key={column}
+                                className={cn(
+                                  'max-w-[420px] truncate px-3 text-xs',
+                                  cellTone(column, row.values[column])
+                                )}
+                              >
+                                {cellText(row.values[column])}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )
+                ) : rows.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                    没有匹配的文档
+                    响应为空
                   </div>
                 ) : (
                   <table className="w-full border-collapse text-xs">
                     <thead className="sticky top-0 z-10 bg-muted/60 text-xs text-muted-foreground backdrop-blur">
                       <tr>
-                        <th
-                          className="h-9 whitespace-nowrap border-b border-border px-3 text-left font-medium"
-                          style={{ width: 150 }}
-                        >
-                          _id
-                        </th>
-                        <th
-                          className="h-9 whitespace-nowrap border-b border-border px-3 text-left font-medium"
-                          style={{ width: 64 }}
-                        >
-                          _score
-                        </th>
-                        {columns.map((column) => (
-                          <th
-                            key={column}
-                            className="h-9 whitespace-nowrap border-b border-border px-3 text-left font-medium"
-                            style={{ width: COLUMN_WIDTHS[column] ?? 120, minWidth: 100 }}
-                          >
-                            {column}
-                          </th>
-                        ))}
+                        <CopyableTh
+                          label="字段"
+                          values={rows.map((row) => String(row.values.key))}
+                          width={260}
+                        />
+                        <CopyableTh
+                          label="值"
+                          values={rows.map((row) => cellText(row.values.value))}
+                        />
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map((row) => (
                         <tr
-                          key={row._id}
-                          className="h-9 border-b border-border/60 transition-colors hover:bg-muted/40"
+                          key={row.id}
+                          className="border-b border-border/60 transition-colors hover:bg-muted/40"
                         >
-                          <td className="max-w-[420px] truncate px-3 text-xs tabular-nums">
-                            {row._id}
+                          <td className="px-3 py-2 align-top text-xs text-muted-foreground">
+                            {String(row.values.key)}
                           </td>
-                          <td className="truncate px-3 text-xs tabular-nums text-muted-foreground">
-                            {row._score.toFixed(1)}
+                          <td className="max-w-[720px] break-all px-3 py-2 align-top text-xs">
+                            {cellText(row.values.value)}
                           </td>
-                          {columns.map((column) => (
-                            <td
-                              key={column}
-                              className={cn(
-                                'max-w-[420px] truncate px-3 text-xs',
-                                cellTone(column, row.values[column])
-                              )}
-                            >
-                              {cellText(row.values[column])}
-                            </td>
-                          ))}
                         </tr>
                       ))}
                     </tbody>
@@ -409,34 +577,38 @@ function cellTone(column: string, value: unknown): string {
 
 function ExportMenu({
   result,
+  kind,
   rows,
   columns,
   index
 }: {
   result: EsRunResult | null
-  rows: Array<{ _id: string; _score: number; values: Record<string, unknown> }>
+  kind: RowKind
+  rows: ResultRow[]
   columns: string[]
   index: string
 }): React.JSX.Element {
   const [copied, setCopied] = useState(false)
 
   const copyJson = async (): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(result?.body ?? {}, null, 2))
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1500)
-    } catch {
-      setCopied(false)
-    }
+    const copiedOk = await copyText(JSON.stringify(result?.body ?? {}, null, 2))
+    setCopied(copiedOk)
+    if (copiedOk) window.setTimeout(() => setCopied(false), 1500)
   }
 
   const exportCsv = (): void => {
-    const header = ['_id', '_score', ...columns]
-    const bodyRows = rows.map((row) => [
-      row._id,
-      row._score,
-      ...columns.map((column) => row.values[column])
-    ])
+    let header: string[] = []
+    let bodyRows: unknown[][] = []
+    if (kind === 'hits') {
+      header = ['_id', '_score', ...columns]
+      bodyRows = rows.map((row) => [row.id, row.score, ...columns.map((c) => row.values[c])])
+    } else if (kind === 'array') {
+      header = columns
+      bodyRows = rows.map((row) => columns.map((column) => row.values[column]))
+    } else {
+      header = ['字段', '值']
+      bodyRows = rows.map((row) => [String(row.values.key), cellText(row.values.value)])
+    }
     downloadText(`${index}-results.csv`, toCsv(header, bodyRows), 'text/csv;charset=utf-8')
   }
 

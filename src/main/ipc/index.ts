@@ -1,23 +1,26 @@
-import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron'
+import { app, BrowserWindow, clipboard, ipcMain, nativeTheme } from 'electron'
 import { z } from 'zod'
 import type {
   ClusterDiagnostics,
   Connection,
+  ConnectionInput,
   ConnectionSummary,
   EsErrorPayload,
   EsRunRequest,
   EsRunResult,
   FieldSchema,
   IndexSchema,
-  IndexSummary
+  IndexSummary,
+  TestResult
 } from '@shared/types'
 import { IPC } from '@shared/ipc'
-import type { CurlInput, SavedQueryInput, ThemePreference } from '@shared/ipc'
+import type { ConnectionDetail, CurlInput, SavedQueryInput, ThemePreference } from '@shared/ipc'
 import { EsRunError, runOperation } from '../es/run'
 import { buildCurl } from '../es/curl'
+import { probeConnection } from '../es/probe'
 import { esHttpRequest } from '../es/client'
-import { demoDiagnostics, demoHotThreads, demoIndices, demoSchema, demoTest } from '../services/demo'
-import type { ConnectionStore } from '../services/connection-store'
+import { demoDiagnostics, demoHotThreads, demoIndices, demoSchema } from '../services/demo'
+import { mergeAuth, type ConnectionStore } from '../services/connection-store'
 import type { HistoryStore } from '../services/history-store'
 import type { SavedStore } from '../services/saved-store'
 import type { SchemaCache } from '../services/schema-cache'
@@ -211,40 +214,52 @@ export function registerIpc(services: AppServices): void {
     services.connections.remove(id)
   }, services)
 
-  handle<string, { ok: boolean; version?: string; clusterName?: string; nodes?: number; latencyMs: number; error?: string }>(
-    IPC.connectionTest,
-    async (id) => {
-      const connection = assertConnection(services, id)
-      if (connection.url.startsWith('demo://')) return demoTest()
-      const startedAt = Date.now()
-      try {
-        const request: EsRunRequest = {
-          connectionId: connection.id,
-          index: null,
-          operationId: 'cluster-health',
-          dsl: null,
-          requestId: `test_${Date.now()}`
-        }
-        const controller = new AbortController()
-        const result = await runOperation(connection, request, controller.signal)
-        const body = result.body as { status?: string; number_of_nodes?: number }
-        return {
-          ok: true,
-          version: '8.x',
-          clusterName: 'cluster',
-          nodes: body.number_of_nodes,
-          latencyMs: Date.now() - startedAt
-        }
-      } catch (error) {
-        return {
-          ok: false,
-          latencyMs: Date.now() - startedAt,
-          error: error instanceof EsRunError ? error.payload.message : '连接失败'
-        }
-      }
-    },
-    services
-  )
+  handle<string, TestResult>(IPC.connectionTest, async (id) => {
+    const connection = assertConnection(services, id)
+    return probeConnection(connection)
+  }, services)
+
+  handle<string, ConnectionDetail>(IPC.connectionDetail, (id) => {
+    const connection = assertConnection(services, id)
+    const auth = connection.auth
+    return {
+      id: connection.id,
+      name: connection.name,
+      url: connection.url,
+      environment: connection.environment,
+      readOnly: connection.readOnly,
+      auth: {
+        type: auth.type,
+        username: auth.type === 'basic' ? auth.username : undefined,
+        apiKeyId: auth.type === 'apiKey' ? auth.id : undefined,
+        hasSecret: auth.type !== 'none'
+      },
+      tls: connection.tls,
+      proxy: connection.proxy,
+      timeoutMs: connection.timeoutMs
+    }
+  }, services)
+
+  handle<ConnectionInput, TestResult>(IPC.connectionTestDraft, async (payload) => {
+    const input = connectionInputSchema.parse(payload)
+    const previous = input.id ? services.connections.get(input.id) : undefined
+    // 编辑时表单里的密码留空，测试沿用已保存的凭证
+    const auth = mergeAuth(previous?.auth ?? null, input.auth)
+    const draft: Connection = {
+      id: input.id ?? 'draft',
+      name: input.name,
+      url: input.url,
+      environment: input.environment,
+      readOnly: true,
+      auth,
+      tls: input.tls,
+      proxy: input.proxy,
+      timeoutMs: input.timeoutMs ?? 30_000,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+    return probeConnection(draft)
+  }, services)
 
   handle<string, IndexSummary[]>(IPC.indexList, async (connectionId) => {
     const connection = assertConnection(services, connectionId)
@@ -397,6 +412,10 @@ export function registerIpc(services: AppServices): void {
     if (!window) return
     const dark = preference === 'dark' || (preference === 'system' && nativeTheme.shouldUseDarkColors)
     window.setBackgroundColor(dark ? '#0a0a0a' : '#ffffff')
+  })
+  // 渲染进程的 navigator.clipboard 在部分焦点/权限状态下会失败，统一改由主进程写入
+  ipcMain.handle('clipboard:write', (_event, text: string) => {
+    clipboard.writeText(text)
   })
 }
 

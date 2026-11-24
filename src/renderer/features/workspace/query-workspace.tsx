@@ -7,6 +7,7 @@ import { parseDsl } from '@shared/query/parse-dsl'
 import { findCondition, updateCondition } from '@shared/query/tree'
 import { validateQuery } from '@shared/query/validate'
 import { formatCount } from '@shared/format'
+import { getOperation } from '@shared/operations'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { EmptyState } from '@/components/common/empty-state'
@@ -41,20 +42,26 @@ export function QueryWorkspace(): React.JSX.Element {
 
   const { data: connections = [] } = useConnections()
   const { data: schema } = useSchema(connectionId, index)
-  const { data: indices = [] } = useIndices(connectionId)
+  const { data: indices = [], isLoading: indicesLoading } = useIndices(connectionId)
 
   const connection = connections.find((entry) => entry.id === connectionId)
   const indexInfo = indices.find((entry) => entry.name === index)
   const fields = schema?.fields ?? []
 
+  // 切换连接、切换索引或连接配置变化后，旧结果不再对应当前上下文，直接清空
+  const resetRunner = runner.reset
   useEffect(() => {
-    if (!connectionId) return
-    if (!index) {
-      if (indices.length > 0) setIndex(indices[0].name)
+    resetRunner()
+  }, [document?.connectionId, document?.index, connection?.url, connection?.readOnly, resetRunner])
+
+  useEffect(() => {
+    if (!connectionId || indicesLoading) return
+    if (indices.length > 0 && (!index || !indices.some((entry) => entry.name === index))) {
+      setIndex(indices[0].name)
       return
     }
-    load(connectionId, index)
-  }, [connectionId, index, indices, load, setIndex])
+    if (index) load(connectionId, index)
+  }, [connectionId, index, indices, indicesLoading, load, setIndex])
 
   const fieldMap = useMemo(
     () =>
@@ -112,6 +119,9 @@ export function QueryWorkspace(): React.JSX.Element {
   }, [document, fieldMap, connection, schema, aggregationField, indexInfo])
 
   const blocked = issues.filter((issue) => issue.level === 'block')
+  const operation = getOperation(document?.operationId ?? 'search')
+  const needsDocId = Boolean(operation?.requiresDocId)
+  const docIdReady = !needsDocId || Boolean(document?.docId.trim())
   const dslText =
     document?.mode === 'dsl'
       ? document.dslText
@@ -119,7 +129,10 @@ export function QueryWorkspace(): React.JSX.Element {
         ? JSON.stringify(effectiveDsl, null, 2)
         : '{}'
   const canRun = Boolean(
-    document && blocked.length === 0 && (document.mode === 'builder' ? effectiveDsl : !dslError)
+    document &&
+      blocked.length === 0 &&
+      docIdReady &&
+      (document.mode === 'builder' ? effectiveDsl : !dslError)
   )
 
   const switchMode = useCallback(
@@ -168,16 +181,19 @@ export function QueryWorkspace(): React.JSX.Element {
         if (doc.operationId === 'agg') dsl.size = 0
       }
 
+      if (!docIdReady) return
+
       update({ dirty: false })
       void runner.run({
         connectionId: doc.connectionId,
         index: doc.index,
         operationId: doc.operationId,
         dsl,
-        dslText
+        dslText,
+        params: needsDocId ? { docId: doc.docId.trim() } : undefined
       })
     },
-    [blocked, effectiveDsl, dslText, runner, update]
+    [blocked, docIdReady, needsDocId, effectiveDsl, dslText, runner, update]
   )
 
   const changePage = useCallback(
@@ -291,15 +307,17 @@ export function QueryWorkspace(): React.JSX.Element {
         mode={document?.mode ?? 'builder'}
         onModeChange={switchMode}
         operationId={document?.operationId ?? 'search'}
-        onOperationChange={(operationId) => update({ operationId })}
+        onOperationChange={(operationId) => update({ operationId, docId: '' })}
         index={index}
         connectionId={connectionId}
         dslText={dslText}
+        docId={document?.docId ?? ''}
+        needsDocId={needsDocId}
+        onDocIdChange={(docId) => update({ docId })}
         readOnly={connection?.readOnly ?? false}
         onRun={run}
         running={runner.status === 'running'}
         canRun={canRun}
-        onCopy={() => void navigator.clipboard.writeText(dslText)}
       />
 
       {document ? (
