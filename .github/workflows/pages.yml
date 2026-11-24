@@ -1,12 +1,12 @@
 name: Pages
 
-# 只在手动触发时运行：Pages 站点需要仓库所有者在 Settings → Pages 启用一次，
-# 默认的 GITHUB_TOKEN 没有创建站点的权限（会报 Resource not accessible by integration）。
-# 启用方式二选一：
-#   1) 零配置：Settings → Pages → Source 选 "Deploy from a branch"，分支 main、目录 /docs。
-#      这种方式不需要本工作流。
-#   2) Actions：Settings → Pages → Source 选 "GitHub Actions"，然后在 Actions 页面手动运行本工作流。
+# push 到 main 时自动检查 Pages 的构建类型：
+# - build_type = workflow（Settings → Pages 选择 GitHub Actions）：自动部署 docs/。
+# - build_type = legacy（Deploy from a branch）：跳过本工作流，GitHub 内置构建会自动发布。
+# 这样两种启用方式都是自动的，且不会在未配置时产生失败记录。
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -27,11 +27,57 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Detect Pages build type
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node -e '
+            const https = require("https");
+            const fs = require("fs");
+            const repo = process.env.GITHUB_REPOSITORY;
+            const options = {
+              host: "api.github.com",
+              path: `/repos/${repo}/pages`,
+              headers: {
+                Authorization: `Bearer ${process.env.GH_TOKEN}`,
+                Accept: "application/vnd.github+json",
+                "User-Agent": "pages-detect"
+              }
+            };
+            https.get(options, (res) => {
+              let body = "";
+              res.on("data", (chunk) => (body += chunk));
+              res.on("end", () => {
+                let buildType = "none";
+                try {
+                  buildType = JSON.parse(body).build_type || "legacy";
+                } catch {
+                  buildType = res.statusCode === 200 ? "legacy" : "none";
+                }
+                console.log(`Pages build_type: ${buildType}`);
+                fs.appendFileSync(process.env.GITHUB_OUTPUT, `build_type=${buildType}\n`);
+              });
+            }).on("error", (error) => {
+              console.log(`detect failed: ${error.message}`);
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, "build_type=none\n");
+            });
+          '
+
+      - name: Note for branch-based Pages
+        if: steps.source.outputs.build_type != 'workflow'
+        run: |
+          echo "Pages 当前不是 GitHub Actions 模式（build_type=${{ steps.source.outputs.build_type }}）。"
+          echo "如果用的是 Deploy from a branch，push 会自动重建 docs，不需要本工作流。"
+
       - uses: actions/configure-pages@v5
+        if: steps.source.outputs.build_type == 'workflow'
 
       - uses: actions/upload-pages-artifact@v3
+        if: steps.source.outputs.build_type == 'workflow'
         with:
           path: docs
 
       - id: deployment
         uses: actions/deploy-pages@v4
+        if: steps.source.outputs.build_type == 'workflow'
