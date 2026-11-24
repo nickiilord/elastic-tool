@@ -1,8 +1,12 @@
 name: Pages
 
+# 只在手动触发时运行：Pages 站点需要仓库所有者在 Settings → Pages 启用一次，
+# 默认的 GITHUB_TOKEN 没有创建站点的权限（会报 Resource not accessible by integration）。
+# 启用方式二选一：
+#   1) 零配置：Settings → Pages → Source 选 "Deploy from a branch"，分支 main、目录 /docs。
+#      这种方式不需要本工作流。
+#   2) Actions：Settings → Pages → Source 选 "GitHub Actions"，然后在 Actions 页面手动运行本工作流。
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -23,12 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 首次使用需要仓库所有者在 Settings → Pages 把 Source 设为 GitHub Actions。
-      # GitHub 不允许默认 GITHUB_TOKEN 创建 Pages site（configure-pages 会报 404），
-      # enablement 只在 token 足够权限时生效，普通公开仓库请直接手动启用一次。
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -175,7 +175,9 @@ build/                 应用图标（打包用）
 
 - **CI**：`.github/workflows/ci.yml` 在 push / PR 到 `main` 时跑类型检查、单测与构建。
 - **发布**：推送 `v*` 标签（如 `v0.1.0`）触发 `.github/workflows/release.yml`，在 Windows runner 上打包并上传安装包到 GitHub Release（`--publish never` + `action-gh-release`，不需要额外 token）。
-- **GitHub Pages**：`.github/workflows/pages.yml` 把 `docs/` 部署为静态页面（`https://nickiilord.github.io/elastic-tool/`）。首次使用需要仓库所有者在 Settings → Pages 把 Build and deployment 的 Source 设为 **GitHub Actions**（GitHub 不允许工作流用默认 token 创建 Pages site），之后每次 push 到 `main` 都会自动部署，也可以在 Actions → Pages 里手动运行。
+- **GitHub Pages**：`docs/` 本身就是可发布的静态页面，两种启用方式：
+  - 最省事：Settings → Pages → Source 选 **Deploy from a branch**，分支 `main`、目录 `/docs`。保存后一两分钟即可访问 `https://nickiilord.github.io/elastic-tool/`，不需要 Actions 权限。
+  - 用 Actions 部署：Settings → Pages → Source 选 **GitHub Actions**（必须由仓库所有者操作一次，GitHub 不允许工作流用默认 token 创建 Pages 站点），然后在 Actions → Pages 手动运行 `.github/workflows/pages.yml`。工作流不再随 push 自动触发，避免未启用时产生失败记录。
 
 ## License
 
