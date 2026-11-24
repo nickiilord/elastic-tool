@@ -23,8 +23,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # enablement: true 会在 Pages 尚未启用时用 workflow token 自动创建 Pages site。
-      # 如果仓库策略禁止自动启用，就在 Settings → Pages 把 Source 设为 GitHub Actions 后重跑本工作流。
+      # 首次使用需要仓库所有者在 Settings → Pages 把 Source 设为 GitHub Actions。
+      # GitHub 不允许默认 GITHUB_TOKEN 创建 Pages site（configure-pages 会报 404），
+      # enablement 只在 token 足够权限时生效，普通公开仓库请直接手动启用一次。
       - uses: actions/configure-pages@v5
         with:
           enablement: true
