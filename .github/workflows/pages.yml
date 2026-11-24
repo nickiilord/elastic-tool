@@ -15,11 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 仓库首次使用前需要先在 Settings → Pages 把 Source 设为 GitHub Actions。
-  # 启用前 push 只会跳过这个 job，不会产生失败记录；启用后可以手动运行本工作流，
-  # 或添加仓库变量 PAGES_ENABLED=true 让后续 push 自动部署。
   deploy:
-    if: github.event_name == 'workflow_dispatch' || vars.PAGES_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -27,7 +23,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # enablement: true 会在 Pages 尚未启用时用 workflow token 自动创建 Pages site。
+      # 如果仓库策略禁止自动启用，就在 Settings → Pages 把 Source 设为 GitHub Actions 后重跑本工作流。
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:

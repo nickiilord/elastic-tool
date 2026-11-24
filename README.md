@@ -175,7 +175,7 @@ build/                 应用图标（打包用）
 
 - **CI**：`.github/workflows/ci.yml` 在 push / PR 到 `main` 时跑类型检查、单测与构建。
 - **发布**：推送 `v*` 标签（如 `v0.1.0`）触发 `.github/workflows/release.yml`，在 Windows runner 上打包并上传安装包到 GitHub Release（`--publish never` + `action-gh-release`，不需要额外 token）。
-- **GitHub Pages**：`.github/workflows/pages.yml` 把 `docs/` 部署为静态页面（`https://nickiilord.github.io/elastic-tool/`）。首次使用需在仓库 Settings → Pages 把 Source 设为 GitHub Actions；启用前 push 只会跳过部署任务，启用后可以手动运行一次 Pages 工作流，或添加仓库变量 `PAGES_ENABLED=true` 让后续 push 自动部署。
+- **GitHub Pages**：`.github/workflows/pages.yml` 把 `docs/` 部署为静态页面（`https://nickiilord.github.io/elastic-tool/`）。工作流通过 `actions/configure-pages` 的 `enablement` 自动启用 Pages；如果仓库策略禁止自动启用，在 Settings → Pages 把 Source 设为 GitHub Actions 后重新运行一次 Pages 工作流即可。
 
 ## License
 
