@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>elastic-tool · Elasticsearch 桌面客户端</title>
+    <meta
+      name="description"
+      content="Elasticsearch 桌面客户端：索引驱动的查询构建器、DSL 编辑器、结果表格与分页、集群诊断，支持浅色与深色主题。"
+    />
+    <link rel="icon" href="assets/logo.png" />
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #ffffff;
+        --fg: #18181b;
+        --muted: #71717a;
+        --border: #e4e4e7;
+        --card: #fafafa;
+        --code-bg: #f4f4f5;
+        --accent: #18181b;
+        --accent-fg: #ffffff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --bg: #0a0a0a;
+          --fg: #fafafa;
+          --muted: #a1a1aa;
+          --border: #27272a;
+          --card: #141414;
+          --code-bg: #1c1c1f;
+          --accent: #fafafa;
+          --accent-fg: #18181b;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: inherit;
+      }
+      .wrap {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+      header {
+        padding: 96px 0 56px;
+        text-align: center;
+      }
+      header img.logo {
+        width: 88px;
+        height: 88px;
+        border-radius: 22px;
+      }
+      h1 {
+        margin: 20px 0 8px;
+        font-size: 40px;
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+      }
+      .tagline {
+        margin: 0 auto;
+        max-width: 640px;
+        color: var(--muted);
+        font-size: 16px;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: center;
+        margin-top: 28px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 40px;
+        padding: 0 18px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--fg);
+        font-size: 14px;
+        font-weight: 500;
+        text-decoration: none;
+        transition: background-color 0.15s ease;
+      }
+      .btn:hover {
+        background: var(--card);
+      }
+      .btn.primary {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: var(--accent-fg);
+      }
+      .btn.primary:hover {
+        opacity: 0.9;
+      }
+      .shot {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        background: var(--card);
+      }
+      .shot img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .light-only,
+      .dark-only {
+        display: block;
+      }
+      @media (prefers-color-scheme: dark) {
+        .light-only {
+          display: none;
+        }
+      }
+      @media (prefers-color-scheme: light) {
+        .dark-only {
+          display: none;
+        }
+      }
+      section {
+        padding: 56px 0;
+        border-top: 1px solid var(--border);
+      }
+      h2 {
+        margin: 0 0 8px;
+        font-size: 24px;
+        letter-spacing: -0.01em;
+      }
+      .section-lead {
+        margin: 0 0 28px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      }
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 18px 20px;
+        background: var(--card);
+      }
+      .card h3 {
+        margin: 0 0 6px;
+        font-size: 15px;
+      }
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      pre {
+        margin: 0;
+        padding: 16px 18px;
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--code-bg);
+        font-family: "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+        font-size: 13px;
+        line-height: 1.7;
+      }
+      code {
+        font-family: "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+        font-size: 0.92em;
+      }
+      p code,
+      li code,
+      td code {
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: var(--code-bg);
+      }
+      .cols {
+        display: grid;
+        gap: 40px;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      th,
+      td {
+        padding: 8px 10px;
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+      }
+      th {
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .stack {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 18px;
+      }
+      .chip {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 4px 12px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      footer {
+        padding: 40px 0 64px;
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 13px;
+        text-align: center;
+      }
+      footer a {
+        color: var(--fg);
+        text-decoration: none;
+      }
+      footer a:hover {
+        text-decoration: underline;
+      }
+      @media (max-width: 600px) {
+        header {
+          padding-top: 64px;
+        }
+        h1 {
+          font-size: 30px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="wrap">
+      <img class="logo" src="assets/logo.png" alt="elastic-tool logo" />
+      <h1>elastic-tool</h1>
+      <p class="tagline">
+        Elasticsearch 桌面客户端。索引驱动的查询构建器、DSL 编辑器、结果表格与分页、集群诊断，浅色与深色主题随时切换。
+      </p>
+      <div class="actions">
+        <a class="btn primary" href="https://github.com/nickiilord/elastic-tool/releases">下载安装包</a>
+        <a class="btn" href="https://github.com/nickiilord/elastic-tool">查看源码</a>
+        <a class="btn" href="https://github.com/nickiilord/elastic-tool#快速开始">从源码运行</a>
+      </div>
+      <div class="stack" style="justify-content: center">
+        <span class="chip">Electron 45</span>
+        <span class="chip">React 19</span>
+        <span class="chip">TypeScript</span>
+        <span class="chip">Tailwind 4</span>
+        <span class="chip">shadcn/ui</span>
+        <span class="chip">MIT License</span>
+      </div>
+    </header>
+
+    <div class="wrap">
+      <div class="shot">
+        <img class="light-only" src="screenshots/overview-light.png" alt="elastic-tool 浅色界面" />
+        <img class="dark-only" src="screenshots/overview-dark.png" alt="elastic-tool 深色界面" />
+      </div>
+    </div>
+
+    <section class="wrap">
+      <h2>把写查询和看集群放到一个窗口里</h2>
+      <p class="section-lead">
+        Dev Tools 需要记字段和 DSL 语法，curl 又看不到结果表格与集群状态。这个客户端把两件事合在一起。
+      </p>
+      <div class="grid">
+        <div class="card">
+          <h3>索引驱动构建器</h3>
+          <p>字段来自 mapping，操作符和值控件随类型变化，实时编译成 DSL 并校验。</p>
+        </div>
+        <div class="card">
+          <h3>结果分页</h3>
+          <p>默认 20 条一页，可切 20 / 50 / 100，上一页下一页自动重跑，改条件回到第一页。</p>
+        </div>
+        <div class="card">
+          <h3>复制成 curl</h3>
+          <p>一键复制与真实请求一致的 curl 命令，含认证方式与自签证书参数。</p>
+        </div>
+        <div class="card">
+          <h3>集群诊断</h3>
+          <p>分片、线程池、磁盘水位、节点状态集中展示，支持自动刷新与 hot threads。</p>
+        </div>
+        <div class="card">
+          <h3>单工作区</h3>
+          <p>不做多标签页，切换索引按「连接 + 索引」保留各自草稿，切回来接着改。</p>
+        </div>
+        <div class="card">
+          <h3>凭证留在本机</h3>
+          <p>请求由主进程发出，密码用系统钥匙串加密，配置文件不落明文。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap">
+      <h2>从源码运行</h2>
+      <p class="section-lead">Node.js 20+ 与 pnpm 10+，首次启动自带 demo://local 演示连接。</p>
+      <pre><code>git clone https://github.com/nickiilord/elastic-tool.git
+cd elastic-tool
+pnpm install
+pnpm dev</code></pre>
+    </section>
+
+    <section class="wrap">
+      <h2>打包</h2>
+      <p class="section-lead"><code>pnpm dist</code> 会把安装包输出到 <code>dist/</code>。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>平台</th>
+            <th>产物</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Windows</td>
+            <td><code>elastic-tool Setup &lt;version&gt;.exe</code>（NSIS x64）</td>
+          </tr>
+          <tr>
+            <td>macOS</td>
+            <td><code>elastic-tool-&lt;version&gt;.dmg</code>（未签名）</td>
+          </tr>
+          <tr>
+            <td>Linux</td>
+            <td><code>elastic-tool-&lt;version&gt;.AppImage</code></td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="section-lead" style="margin-top: 16px">
+        只想要免安装目录：<code>pnpm build &amp;&amp; pnpm exec electron-builder --dir</code>。
+      </p>
+    </section>
+
+    <section class="wrap">
+      <div class="cols">
+        <div>
+          <h2>快捷键</h2>
+          <table>
+            <tbody>
+              <tr><td><code>Ctrl K</code></td><td>命令面板</td></tr>
+              <tr><td><code>Ctrl Enter</code></td><td>运行当前查询</td></tr>
+              <tr><td><code>Ctrl N</code></td><td>新建连接</td></tr>
+              <tr><td><code>Ctrl S</code></td><td>保存当前查询</td></tr>
+              <tr><td><code>F5</code></td><td>刷新索引、mapping 与诊断</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h2>界面说明</h2>
+          <p class="section-lead" style="margin-bottom: 0">
+            组件全部由 shadcn/ui 提供，主题是官方 neutral 变量，浅色 / 深色 / 跟随系统三档，切换带扩散过渡。
+            深色模式的语法高亮、表格、弹层都跟随主题，`prefers-reduced-motion` 下动画自动关闭。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="wrap">
+      <p>
+        <a href="https://github.com/nickiilord/elastic-tool">GitHub</a>
+        ·
+        <a href="https://github.com/nickiilord/elastic-tool/releases">Releases</a>
+        ·
+        <a href="https://github.com/nickiilord/elastic-tool/issues">Issues</a>
+        ·
+        <a href="https://github.com/nickiilord/elastic-tool/blob/main/LICENSE">MIT License</a>
+      </p>
+      <p>Built with Electron, React and shadcn/ui.</p>
+    </footer>
+  </body>
+</html>
