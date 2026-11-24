@@ -65,25 +65,27 @@ pnpm dev
 
 首次启动会自动创建一个 `demo://local` 演示连接，不需要真实 Elasticsearch 就能完整体验：构建器、校验、运行、结果表格、分页、诊断页。
 
-连接真实集群：点侧栏顶部的加号，或标题栏连接名下拉菜单里的「新建连接」，填节点地址与认证方式。凭证用系统钥匙串（safeStorage）加密保存，配置文件里只存认证方式的类型。
+连接真实集群：点侧栏顶部的加号，或标题栏连接名下拉菜单里的「新建连接」，填节点地址与认证方式。凭证用系统钥匙串（safeStorage）加密后写入本地 SQLite 凭证库，配置文件里只存认证方式的类型。
 
-## 打包
+## 打包与发布
 
 ```bash
-pnpm dist        # 类型检查 + 构建 + 打包，产物在 dist/
+pnpm dist        # 类型检查 + 构建 + 打包当前平台，产物在 dist/
 ```
 
 | 平台 | 产物 | 说明 |
 |---|---|---|
-| Windows | `dist/elastic-tool Setup <version>.exe` | NSIS 安装包（x64） |
-| macOS | `dist/elastic-tool-<version>.dmg` | 未签名，首次打开需在系统设置里放行 |
-| Linux | `dist/elastic-tool-<version>.AppImage` | 需要 FUSE |
+| Windows | `elastic-tool-<version>-win-x64.exe` | NSIS 安装包（x64） |
+| macOS | `elastic-tool-<version>-mac-x64.dmg`、`-mac-arm64.dmg`，以及对应的 `.zip` | 未签名未公证，首次打开需右键「打开」或在系统设置里放行；zip 供自动更新使用 |
+| Linux | `elastic-tool-<version>-linux-x64.AppImage` | 需要 FUSE |
+
+发布由 `.github/workflows/release.yml` 完成：推送 `v*` 标签后，在 Windows、macOS、Linux 三个 runner 上并行打包（macOS 同时构建 x64 与 arm64），产物先上传为 artifact，再由 release job 汇总到同一个 GitHub Release。所以每个版本的 Release 会同时包含三个平台的文件与对应的 `latest*.yml`。
 
 只想生成免安装目录、验证打包结果：`pnpm build && pnpm exec electron-builder --dir`，产物在 `dist/win-unpacked/`（mac 为 `dist/mac*/`，Linux 为 `dist/linux-unpacked/`）。
 
-打包配置在 `package.json` 的 `build` 字段：应用图标是 `build/icon.ico` 与 `build/icon.png`，`asar` 开启，源码与测试目录不进包。渲染层依赖全部打进前端 bundle，所以 `dependencies` 里只保留主进程运行时真正需要的包。
+打包配置在 `package.json` 的 `build` 字段：应用图标是 `build/icon.ico` 与 `build/icon.png`，`artifactName` 统一为 `elastic-tool-<version>-<os>-<arch>.<ext>`，`asar` 开启，源码与测试目录不进包。渲染层依赖全部打进前端 bundle，所以 `dependencies` 里只保留主进程运行时真正需要的包（`zod`、`electron-updater`）。
 
-当前未配置代码签名与自动更新，`electron-builder` 会跳过签名。
+当前未配置代码签名与 macOS 公证，`electron-builder` 会跳过签名；自动更新在 Windows 与 macOS 打包版本上生效。
 
 ## 脚本
 
@@ -191,8 +193,8 @@ build/                 应用图标（打包用）
 ## 发布与网页
 
 - **CI**：`.github/workflows/ci.yml` 在 push / PR 到 `main` 时跑类型检查、单测与构建。
-- **发布**：推送 `v*` 标签（如 `v0.1.0`）触发 `.github/workflows/release.yml`，在 Windows runner 上打包并上传安装包到 GitHub Release（`--publish never` + `action-gh-release`，不需要额外 token）。
-- **自动更新**：`build.publish` 指向本仓库，打包会生成 `latest.yml` 与 `app-update.yml`；应用启动后会检查 GitHub Releases，发现新版本时用系统对话框询问是否下载与重启安装。
+- **发布**：推送 `v*` 标签触发 `.github/workflows/release.yml`，在 Windows / macOS / Linux 三个 runner 上并行打包（macOS 同时出 x64 与 arm64），统一汇总到同一个 GitHub Release（`--publish never` + `action-gh-release`，不需要额外 token）。
+- **自动更新**：`build.publish` 指向本仓库，打包会按平台生成 `latest.yml`（Windows）、`latest-mac.yml`、`latest-linux.yml` 与 `app-update.yml`；应用启动后会检查 GitHub Releases，发现新版本时用系统对话框询问是否下载与重启安装。
 - **GitHub Pages**：`docs/` 本身就是可发布的静态页面，两种启用方式：
   - 最省事：Settings → Pages → Source 选 **Deploy from a branch**，分支 `main`、目录 `/docs`。保存后一两分钟即可访问 `https://nickiilord.github.io/elastic-tool/`，不需要 Actions 权限。
   - 用 Actions 部署：Settings → Pages → Source 选 **GitHub Actions**（必须由仓库所有者操作一次，GitHub 不允许工作流用默认 token 创建 Pages 站点），然后在 Actions → Pages 手动运行 `.github/workflows/pages.yml`。工作流不再随 push 自动触发，避免未启用时产生失败记录。

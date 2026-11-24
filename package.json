@@ -1,6 +1,6 @@
 {
   "name": "elastic-tool",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Elasticsearch desktop client built with Electron, React and shadcn/ui",
   "main": "./out/main/index.js",
   "license": "MIT",
@@ -51,7 +51,7 @@
   "build": {
     "appId": "com.elastictool.desktop",
     "productName": "elastic-tool",
-    "artifactName": "elastic-tool-Setup-${version}.${ext}",
+    "artifactName": "elastic-tool-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist"
     },
@@ -88,7 +88,10 @@
       ]
     },
     "mac": {
-      "target": "dmg",
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.developer-tools"
     },
     "linux": {

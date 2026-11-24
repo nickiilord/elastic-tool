@@ -1,5 +1,7 @@
 name: Release
 
+# 三平台矩阵打包：Windows NSIS、macOS dmg/zip（x64 + arm64）、Linux AppImage。
+# 各平台产物先作为 artifact 上传，最后在同一个 Release 里汇总发布。
 on:
   push:
     tags:
@@ -9,8 +11,22 @@ permissions:
   contents: write
 
 jobs:
-  package:
-    runs-on: windows-latest
+  build:
+    name: Build (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            package: pnpm exec electron-builder --win --publish never
+          - os: macos-latest
+            platform: macos
+            package: pnpm exec electron-builder --mac --x64 --arm64 --publish never
+          - os: ubuntu-latest
+            platform: linux
+            package: pnpm exec electron-builder --linux --x64 --publish never
+    runs-on: ${{ matrix.os }}
     env:
       # 没有配置代码签名证书，显式跳过签名
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -33,24 +49,45 @@ jobs:
         run: pnpm build
 
       - name: Package
-        run: pnpm exec electron-builder --win nsis --publish never
+        run: ${{ matrix.package }}
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.AppImage
+            dist/*.blockmap
+            dist/*.yml
+          if-no-files-found: error
 
       - name: Upload builder debug info
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: builder-debug
+          name: builder-debug-${{ matrix.platform }}
           path: |
             dist/builder-debug.yml
             dist/*.log
           if-no-files-found: ignore
 
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all packages
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/*.exe
-            dist/*.blockmap
-            dist/latest*.yml
+          files: artifacts/**
           draft: false
           generate_release_notes: true
